@@ -1,0 +1,263 @@
+name: Databricks ETL Mantenimiento Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Install jq & curl
+      run: sudo apt-get update && sudo apt-get install -y jq curl
+
+    - name: Export notebooks from Databricks
+      run: |
+        ORIGIN_HOST=${{ secrets.DATABRICKS_ORIGIN_HOST }}
+        ORIGIN_TOKEN=${{ secrets.DATABRICKS_ORIGIN_TOKEN }}
+        NOTEBOOK_BASE="/Workspace/Users/jjmc.dbc@hotmail.com/Project/-databricks_project_Data_Engineering/Proceso"
+        NOTEBOOKS=("00-Preparacion_Ambiente"
+                   "01-Ingesta_Raw_Bronze"
+                   "02-Transform_Silver"
+                   "03-Load_golden"
+                   "04-grants")
+        mkdir -p notebooks_to_deploy
+        for nb in "${NOTEBOOKS[@]}"; do
+          echo "Exportando $nb..."
+          curl -s -X GET \
+            -H "Authorization: Bearer $ORIGIN_TOKEN" \
+            "$ORIGIN_HOST/api/2.0/workspace/export?path=$NOTEBOOK_BASE/$nb&format=SOURCE&direct_download=true" \
+            --output "notebooks_to_deploy/$nb.py"
+          echo "✅ $nb exportado"
+        done
+
+    - name: Deploy notebooks to production workspace
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        DEST_BASE="/-databricks_project_Data_Engineering/proceso"
+        for file in notebooks_to_deploy/*.py; do
+          name=$(basename "$file" .py)
+          dest_path="$DEST_BASE/$name"
+          echo "Creando carpeta $DEST_BASE..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $DEST_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"path\":\"$DEST_BASE\"}" \
+            "$DEST_HOST/api/2.0/workspace/mkdirs"
+          echo "Importando $name → $dest_path"
+          response=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEST_TOKEN" \
+            -H "Content-Type: multipart/form-data" \
+            -F "path=$dest_path" \
+            -F "format=SOURCE" \
+            -F "language=PYTHON" \
+            -F "overwrite=true" \
+            -F "content=@$file" \
+            "$DEST_HOST/api/2.0/workspace/import")
+          echo "Response: $response"
+        done
+
+    - name: Check and delete existing workflow
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        WORKFLOW_NAME="WF_PROD_ETL_MANTENIMIENTO"
+        echo "Verificando si existe el workflow: $WORKFLOW_NAME"
+        workflows_response=$(curl -s -X GET \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          "$DEST_HOST/api/2.1/jobs/list")
+        existing_job_id=$(echo "$workflows_response" | jq -r --arg name "$WORKFLOW_NAME" '.jobs[]? | select(.settings.name == $name) | .job_id')
+        if [ "$existing_job_id" != "" ] && [ "$existing_job_id" != "null" ]; then
+          echo "Workflow encontrado con ID: $existing_job_id. Eliminando..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $DEST_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"job_id\": $existing_job_id}" \
+            "$DEST_HOST/api/2.1/jobs/delete"
+          echo "✅ Workflow eliminado"
+        else
+          echo "No existe workflow previo"
+        fi
+
+    - name: Get cluster ID
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        CLUSTER_NAME="ProjectF's Cluster"
+        echo "Buscando cluster: $CLUSTER_NAME"
+        clusters_response=$(curl -s -X GET \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          "$DEST_HOST/api/2.0/clusters/list")
+        cluster_id=$(echo "$clusters_response" | jq -r --arg name "$CLUSTER_NAME" '.clusters[]? | select(.cluster_name == $name) | .cluster_id')
+        if [ "$cluster_id" != "" ] && [ "$cluster_id" != "null" ]; then
+          echo "✅ Cluster encontrado con ID: $cluster_id"
+          echo "CLUSTER_ID=$cluster_id" >> $GITHUB_ENV
+        else
+          echo "❌ Cluster no encontrado"
+          echo "$clusters_response" | jq -r '.clusters[]? | .cluster_name'
+          exit 1
+        fi
+
+    - name: Create Databricks Workflow
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        DEST_BASE="/-databricks_project_Data_Engineering/proceso"
+        CLUSTER_ID="${{ env.CLUSTER_ID }}"
+        cat > workflow_config.json << EOF
+        {
+          "name": "WF_PROD_ETL_MANTENIMIENTO",
+          "format": "MULTI_TASK",
+          "tasks": [
+            {
+              "task_key": "01-Ingesta_Raw_Bronze",
+              "description": "Extraccion de datos Raw a Bronze",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/01-Ingesta_Raw_Bronze",
+                "source": "WORKSPACE"
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2
+            },
+            {
+              "task_key": "02-Transform_Silver",
+              "description": "Transformacion Bronze a Silver",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/02-Transform_Silver",
+                "source": "WORKSPACE"
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2,
+              "depends_on": [{"task_key": "01-Ingesta_Raw_Bronze"}]
+            },
+            {
+              "task_key": "03-Load_golden",
+              "description": "Carga Silver a Golden",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/03-Load_golden",
+                "source": "WORKSPACE"
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2,
+              "depends_on": [{"task_key": "02-Transform_Silver"}]
+            },
+            {
+              "task_key": "04-grants",
+              "description": "Aplicacion de permisos",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/04-grants",
+                "source": "WORKSPACE"
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2,
+              "depends_on": [{"task_key": "03-Load_golden"}]
+            }
+          ],
+          "schedule": {
+            "quartz_cron_expression": "0 0 8 * * ?",
+            "timezone_id": "America/Lima",
+            "pause_status": "ACTIVE"
+          },
+          "timeout_seconds": 7200,
+          "max_concurrent_runs": 1,
+          "tags": {
+            "environment": "production",
+            "project": "etl_mantenimiento"
+          }
+        }
+        EOF
+        create_response=$(curl -s -X POST \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d @workflow_config.json \
+          "$DEST_HOST/api/2.1/jobs/create")
+        echo "Response: $create_response"
+        job_id=$(echo "$create_response" | jq -r '.job_id')
+        if [ "$job_id" != "" ] && [ "$job_id" != "null" ]; then
+          echo "✅ Workflow WF_PROD_ETL_MANTENIMIENTO creado con ID: $job_id"
+          echo "WORKFLOW_JOB_ID=$job_id" >> $GITHUB_ENV
+        else
+          echo "❌ Error al crear workflow"
+          exit 1
+        fi
+
+    - name: Execute Workflow
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        JOB_ID="${{ env.WORKFLOW_JOB_ID }}"
+        run_response=$(curl -s -X POST \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"job_id\": $JOB_ID}" \
+          "$DEST_HOST/api/2.1/jobs/run-now")
+        run_id=$(echo "$run_response" | jq -r '.run_id')
+        if [ "$run_id" != "" ] && [ "$run_id" != "null" ]; then
+          echo "✅ Workflow ejecutado con Run ID: $run_id"
+          echo "WORKFLOW_RUN_ID=$run_id" >> $GITHUB_ENV
+          echo "🔗 URL: $DEST_HOST/jobs/$JOB_ID/runs/$run_id"
+        else
+          echo "❌ Error al ejecutar workflow"
+          exit 1
+        fi
+
+    - name: Monitor Workflow
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        RUN_ID="${{ env.WORKFLOW_RUN_ID }}"
+        JOB_ID="${{ env.WORKFLOW_JOB_ID }}"
+        max_wait_time=600
+        wait_time=0
+        check_interval=30
+        while [ $wait_time -lt $max_wait_time ]; do
+          run_status=$(curl -s -X GET \
+            -H "Authorization: Bearer $DEST_TOKEN" \
+            "$DEST_HOST/api/2.1/jobs/runs/get?run_id=$RUN_ID")
+          state=$(echo "$run_status" | jq -r '.state.life_cycle_state')
+          result_state=$(echo "$run_status" | jq -r '.state.result_state // "RUNNING"')
+          echo "⏱️ Estado: $state ($result_state) - ${wait_time}s"
+          echo "$run_status" | jq -r '.tasks[]? | "  📋 " + .task_key + ": " + .state.life_cycle_state'
+          case "$state" in
+            "TERMINATED")
+              if [ "$result_state" = "SUCCESS" ]; then
+                echo "🎉 Workflow completado exitosamente!"
+                exit 0
+              else
+                echo "❌ Workflow terminó con errores: $result_state"
+                exit 1
+              fi
+              ;;
+            "INTERNAL_ERROR"|"SKIPPED")
+              echo "❌ Workflow falló: $state"
+              exit 1
+              ;;
+          esac
+          sleep $check_interval
+          wait_time=$((wait_time + check_interval))
+        done
+        echo "⚠️ Timeout - workflow sigue ejecutándose en Databricks"
+        echo "🔗 Verifica en: $DEST_HOST/jobs/$JOB_ID/runs/$RUN_ID"
+        exit 0
+
+    - name: Cleanup
+      run: |
+        rm -rf notebooks_to_deploy
+        rm -f workflow_config.json
+
+    - name: Done
+      run: |
+        echo "🎉 Deploy completado exitosamente!"
+        echo "✅ Notebooks desplegados: 01_extract, 02_transform, 03_load, 04_grants"
+        echo "✅ Workflow creado: WF_PROD_ETL_MANTENIMIENTO"
+        echo "✅ Cluster: ProjectF's Cluster"
+        echo "🚀 ETL ejecutado automáticamente en Databricks"
