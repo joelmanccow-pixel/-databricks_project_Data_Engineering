@@ -127,8 +127,10 @@ Dashboard Power BI con KPIs de mantenimiento:
 - Top equipos con mayor número de averías
 - Tendencia mensual de órdenes de mantenimiento y costos
 
-Ver dashboard: [link](dashboard/enlace.txt)
-![Power BI - ETL Mantenimiento](BI Mantenimiento Equipos.png)
+![Power BI - ETL Mantenimiento](dasboard/BI Mantenimiento Equipos.png)
+
+[link](dashboard/enlace.txt)
+
 ## Monitoreo
 
 En Databricks → Workflows → WF_PROD_ETL_MANTENIMIENTO
