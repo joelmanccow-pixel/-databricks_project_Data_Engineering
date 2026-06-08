@@ -115,6 +115,17 @@ jobs:
           "format": "MULTI_TASK",
           "tasks": [
             {
+              "task_key": "00-Preparacion_Ambiente",
+              "description": "Preparacion de ambiente y schemas",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/00-Preparacion_Ambiente",
+                "source": "WORKSPACE"
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2
+            },
+            {
               "task_key": "01-Ingesta_Raw_Bronze",
               "description": "Extraccion de datos Raw a Bronze",
               "notebook_task": {
