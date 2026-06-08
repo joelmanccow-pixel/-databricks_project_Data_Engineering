@@ -36,6 +36,7 @@ Pipeline que transforma datos crudos de equipos, avisos y órdenes de mantenimie
 | tendencia_mensual_mantenimiento | Evolución mensual de costos y órdenes |
 
 ## Estructura del repositorio
+```
 ├── datasets/               # Datasets fuente del ETL (.csv)
 ├── proceso/                # Notebooks del ETL
 │   ├── 00-Preparacion_Ambiente
@@ -47,6 +48,8 @@ Pipeline que transforma datos crudos de equipos, avisos y órdenes de mantenimie
 ├── seguridad/              # Scripts SQL de GRANTS
 ├── reversion/              # Scripts de DROP tablas y schemas
 ├── .github/workflows/      # CI/CD pipeline (deploy.yml)
+├── dashboard/              # Dashboard Power BI
+```
 
 ## Servicios Azure utilizados
 
@@ -92,6 +95,7 @@ GitHub Actions ejecutará automáticamente:
 
 ## CI/CD
 Workflow: Databricks ETL Mantenimiento Deploy
+```
 ├── Export notebooks desde Databricks workspace
 ├── Deploy notebooks al workspace producción
 ├── Eliminar workflow anterior (si existe)
@@ -99,6 +103,8 @@ Workflow: Databricks ETL Mantenimiento Deploy
 ├── Crear workflow WF_PROD_ETL_MANTENIMIENTO
 ├── Ejecutar pipeline automáticamente
 └── Monitorear hasta completar
+```
+![Workflow](WF_PROD_ETL_MANTENIMIENTO.png)
 
 Schedule: Diario 8:00 AM (America/Lima)
 Timeout total: 2 horas
@@ -121,8 +127,8 @@ Dashboard Power BI con KPIs de mantenimiento:
 - Top equipos con mayor número de averías
 - Tendencia mensual de órdenes de mantenimiento y costos
 
-Ver dashboard: [link](dashboard/link.txt)
-
+Ver dashboard: [link](dashboard/enlace.txt)
+![Power BI - ETL Mantenimiento](BI Mantenimiento Equipos.png)
 ## Monitoreo
 
 En Databricks → Workflows → WF_PROD_ETL_MANTENIMIENTO
@@ -131,5 +137,5 @@ En GitHub → Actions → Databricks ETL Mantenimiento Deploy
 
 ## Autor
 
-Jehnmar Joel Mancco
+Jehnmar Joel Mancco cunyas
 Data Engineering | Azure Databricks | Delta Lake | CI/CD
