@@ -14,7 +14,7 @@ a través de avisos y órdenes de mantenimiento preventivo y correctivo.
 - **Raw** → Azure Data Lake (External Location con Managed Identity)
 - **Bronze** → Ingesta directa desde Raw (Delta Tables)
 - **Silver** → Limpieza, tipado y estandarización
-- **Gold** → KPIs y tablas analíticas para dashboard
+- **Gold** → KPIs y tablas analíticas para dashboard.
 
 ## Estructura del repositorio
 - `datasets/` - Datasets fuente del ETL
