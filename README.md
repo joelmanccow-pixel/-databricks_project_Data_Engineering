@@ -104,7 +104,7 @@ Workflow: Databricks ETL Mantenimiento Deploy
 ├── Ejecutar pipeline automáticamente
 └── Monitorear hasta completar
 ```
-![Workflow](WF_PROD_ETL_MANTENIMIENTO.png)
+![Workflow](evidencias/WF_PROD_ETL_MANTENIMIENTO.png)
 
 Schedule: Diario 8:00 AM (America/Lima)
 Timeout total: 2 horas
