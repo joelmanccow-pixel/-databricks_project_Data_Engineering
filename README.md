@@ -116,10 +116,10 @@ Navegar a `/Workspace/.../Proceso` y ejecutar en orden:
 ## Dashboard
 
 Dashboard Power BI con KPIs de mantenimiento:
-- Costo total por centro de coste
+- Costo total por tipo de aviso
 - Distribución de avisos por tipo y prioridad
 - Top equipos con mayor número de averías
-- Tendencia mensual de órdenes de mantenimiento
+- Tendencia mensual de órdenes de mantenimiento y costos
 
 Ver dashboard: [link](dashboard/link.txt)
 
